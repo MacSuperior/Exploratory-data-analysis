@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Flight Delay Dashboard</title>
+    <!-- Include Plotly JS library -->
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+</head>
+<body>
+    <!-- Display the scatter plot using Plotly -->
+    <div id="scatter-plot"></div>
+
+    <script>
+        // Load the scatter plot JSON data and display it
+        var scatterPlotJSON = {{ scatter_plot_json|safe }};
+        Plotly.newPlot('scatter-plot', scatterPlotJSON.data, scatterPlotJSON.layout);
+    </script>
+</body>
+</html>
