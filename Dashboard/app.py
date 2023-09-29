@@ -5,12 +5,9 @@ import dash_bootstrap_components as dbc
 from dash import dcc, html, Input, Output
 import folium
 
-# TODO just import instead of operating on data (change pkl files)
+# TODO just drop columns not in use before importing
 df = pd.read_pickle("data.pkl")
 airport_data = pd.read_pickle("airport_data.pkl")
-
-df.rename(columns={'DayofMonth': 'Day'}, inplace=True)
-df["Date"] = pd.to_datetime(df[["Year", "Month", "Day"]])
 
 unique_airports = pd.unique(pd.concat([df['Origin'], df['Dest']]))
 
@@ -31,6 +28,50 @@ delay_types = {
     "SecurityDelay": "Security Delay",
     "LateAircraftDelay": "Late Aircraft Delay"
 }
+
+airline_dict = {
+    'WN': 'Southwest Airlines',
+    'XE': 'ExpressJet Airlines',
+    'YV': 'Mesa Airlines',
+    'OH': 'Comair',
+    'OO': 'SkyWest Airlines',
+    'UA': 'United Airlines',
+    'US': 'US Airways',
+    'DL': 'Delta Air Lines',
+    'EV': 'ExpressJet Airlines',
+    'F9': 'Frontier Airlines',
+    'FL': 'AirTran Airways',
+    'HA': 'Hawaiian Airlines',
+    'MQ': 'Envoy Air (formerly American Eagle Airlines)',
+    'NW': 'Northwest Airlines',
+    '9E': 'Endeavor Air',
+    'AA': 'American Airlines',
+    'AQ': 'Aloha Airlines',
+    'AS': 'Alaska Airlines',
+    'B6': 'JetBlue Airways',
+    'CO': 'Continental Airlines'
+}
+
+@app.callback(
+    Output('flights-per-carrier', 'figure'),
+    [Input('my-date-picker-range', 'start_date'), Input('my-date-picker-range', 'end_date')],
+    Input('airline-selector', 'value')
+)
+def update_graph(start_date, end_date, selected_carriers):
+    date_filtered_df = df.loc[(pd.Timestamp(start_date) <= df["Date"]) & (df["Date"] <= pd.Timestamp(end_date))]
+
+    fully_filtered = date_filtered_df[date_filtered_df['UniqueCarrier'].isin(selected_carriers)]
+
+    # Amount of flights for certain airports
+    carrier_weight = fully_filtered["UniqueCarrier"].value_counts().reset_index(name="Count")
+
+    # Create the bar chart
+    fig = px.bar(carrier_weight, x="UniqueCarrier", y="Count", 
+                title="Airline flights Distribution",
+                labels={"UniqueCarrier": "Carrier Code", "Count": "Amount of flights"})
+
+    # Show the plot
+    return fig
 
 @app.callback(
     Output('graph-output', 'figure'),
@@ -66,7 +107,8 @@ def update_graph(start_date, end_date, method, delay_type_key):
 
 def update_map():
     m_selected = folium.Map(location=[30, -95], tiles="OpenStreetMap", zoom_start=4.5)
-    marker_group = folium.FeatureGroup(name="Marker collection", show=False).add_to(m_selected)
+    airport_group = folium.FeatureGroup(name="Show Airports", show=True).add_to(m_selected)
+    not_in_data_airport = folium.FeatureGroup(name="Show airports not in this data", show=False).add_to(m_selected)
 
     for index, row in airport_data.iterrows():
         if row['IATA'] in unique_airports:
@@ -79,9 +121,14 @@ def update_map():
                 location=[row['LATITUDE'], row['LONGITUDE']],
                 popup=row['IATA'],
                 icon=custom_marker_icon
-            ).add_to(marker_group)
+            ).add_to(airport_group)
+        else:
+            folium.Marker(
+                location=[row['LATITUDE'], row['LONGITUDE']],
+                popup=row["IATA"]
+            ).add_to(not_in_data_airport)
 
-    folium.LayerControl(collapsed=False).add_to(m_selected)
+    folium.LayerControl(collapsed=True).add_to(m_selected)
 
     return m_selected._repr_html_()
 
@@ -101,46 +148,58 @@ app.layout = dbc.Container(
         dbc.Row(
             [
                 dbc.Col(
-                    dcc.Graph(id='graph-output'),
-                    width=10
-                ),
-                dbc.Col(
-                    dcc.RadioItems(
-                        options=[ {"label": label, "value": value} for value, label in delay_types.items()],
-                        value='ArrDelay',
-                        id='delay-type'),
-                    width=2
-                ),
-            ],
-        ),
-        dbc.Row(
-            [
-                dbc.Col(
-                    dcc.DatePickerRange(
-                    id='my-date-picker-range',
-                    min_date_allowed=df['Date'].min(),
-                    max_date_allowed=df['Date'].max(),
-                    initial_visible_month=df['Date'].min(),
-                    start_date=df['Date'].min(),
-                    end_date=df['Date'].max()),
-                )
-            ],
-        ), 
-        dbc.Row(
-            [
-                dbc.Col(
                     dcc.RadioItems(
                         options=[
                             {'label': 'Use the average delay', 'value': 'mean'},
                             {'label': 'Use the total delay', 'value': 'total'}],
                         value='mean',
-                        id='calculation-method',
-                        inline=True),
-                    width=6
-                ), 
+                        id='calculation-method'),
+                ),
             ],
+            justify="start",
         ),
-        html.Br(), # Breathing room
+        dbc.Row(
+            [
+                dbc.Col(
+                    [
+                        dcc.RadioItems(
+                            options=[ {"label": label, "value": value} for value, label in delay_types.items()],
+                            value='ArrDelay',
+                            id='delay-type'),
+                        dcc.DatePickerRange(
+                            id='my-date-picker-range',
+                            min_date_allowed=df['Date'].min(),
+                            max_date_allowed=df['Date'].max(),
+                            initial_visible_month=df['Date'].min(),
+                            start_date=df['Date'].min(),
+                            end_date=df['Date'].max()),
+                    ],         
+                    width=3
+                ),
+                dbc.Col(
+                    dcc.Graph(id='graph-output'),
+                    width=9
+                ),
+            ],
+            align="center",
+        ),
+
+        dbc.Row(
+            [
+                dbc.Col(
+                    dcc.Checklist(
+                        options=[{'label': air_carrier, 'value': air_carrier_code} for air_carrier_code, air_carrier in airline_dict.items()],
+                        value=[key for key in airline_dict.keys()],
+                        id='airline-selector'
+                        ),
+                ),
+                dbc.Col(
+                    dcc.Graph(id='flights-per-carrier')   ,
+                    width=9                 
+                ),
+                html.Br() # Breathing room
+            ]
+        ),
     ],
     fluid=True,
 )
