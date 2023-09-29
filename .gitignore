@@ -3,4 +3,4 @@
 .DS_Store
 Dashboard/*
 !Dashboard/app.py
-Exploration/
+Exploration/*
