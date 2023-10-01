@@ -74,11 +74,11 @@ def update_graph_flights(start_date, end_date, selected_carriers):
     Output("date-graph-hover", "figure"),
     [Input('my-date-picker-range', 'start_date'), Input('my-date-picker-range', 'end_date')],
     Input('delay-type', 'value'),
-    Input('flights-per-carrier', 'hoverData'),
+    Input('graph-output', 'hoverData'),
     Input('calculation-method', 'value'),
 
 )
-def update_hover_graph(start_date, end_date, delay_type_key, hovered_data, method):
+def hover_graph(start_date, end_date, delay_type_key, hovered_data, method):
     if hovered_data is None:
         selected_carrier = "WN"
     elif hovered_data is not None:
@@ -96,6 +96,27 @@ def update_hover_graph(start_date, end_date, delay_type_key, hovered_data, metho
                 title=f"Delay for selected airline: {airline_dict[selected_carrier]} ({selected_carrier})",
                 labels={"Date": "Date", f"{delay_type_key}": f"{method} Delay in minutes"})
 
+    return fig
+
+@app.callback(
+    Output("flights-amount", "figure"),
+    [Input('my-date-picker-range', 'start_date'), Input('my-date-picker-range', 'end_date')],
+    Input('flights-per-carrier', 'hoverData'),
+)
+def hover_graph_flights_num(start_date, end_date, hovered_data):
+    if hovered_data is None:
+        selected_carrier = "WN"
+    elif hovered_data is not None:
+        selected_carrier = hovered_data['points'][0]['label']
+
+    df_filtered = df.loc[(pd.Timestamp(start_date) <= df["Date"]) & (df["Date"] <= pd.Timestamp(end_date))]
+    df_filtered = df_filtered[df_filtered['UniqueCarrier'].isin([selected_carrier])]
+
+    flight_count_df = df_filtered.groupby("Date").size().reset_index(name='FlightCount')
+
+    fig = px.line(flight_count_df, x="Date", y="FlightCount",
+                  title="Total Number of Flights for Selected Carrier",
+                  labels={"Date": "Date", "FlightCount": "Total Flights"})
     return fig
 
 @app.callback(
@@ -282,7 +303,7 @@ dashboard = dbc.Container(
                 ),
                 dbc.Col(
                     [
-                        dcc.Graph(id='date-graph-hover'),
+                        dcc.Graph(id='flights-amount'),
                     ],
                     md=6
                 ),
@@ -290,7 +311,8 @@ dashboard = dbc.Container(
         ),
         dbc.Row(
             [
-                dbc.Col(dcc.Graph(id='graph-output'))
+                dbc.Col(dcc.Graph(id='graph-output'), md=6),
+                dbc.Col(dcc.Graph(id="date-graph-hover"), md=6)
             ]
         )
     ],
