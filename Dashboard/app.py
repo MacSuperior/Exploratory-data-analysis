@@ -62,15 +62,40 @@ def update_graph_flights(start_date, end_date, selected_carriers):
 
     fully_filtered = date_filtered_df[date_filtered_df['UniqueCarrier'].isin(selected_carriers)]
 
-    # Amount of flights for certain airports
     carrier_weight = fully_filtered["UniqueCarrier"].value_counts().reset_index(name="Count")
 
-    # Create the bar chart
     fig = px.bar(carrier_weight, x="UniqueCarrier", y="Count", 
                 title="Airline flights Distribution",
                 labels={"UniqueCarrier": "Carrier Code", "Count": "Amount of flights"})
 
-    # Show the plot
+    return fig
+
+@app.callback(
+    Output("date-graph-hover", "figure"),
+    [Input('my-date-picker-range', 'start_date'), Input('my-date-picker-range', 'end_date')],
+    Input('delay-type', 'value'),
+    Input('flights-per-carrier', 'hoverData'),
+    Input('calculation-method', 'value'),
+
+)
+def update_hover_graph(start_date, end_date, delay_type_key, hovered_data, method):
+    if hovered_data is None:
+        selected_carrier = "WN"
+    elif hovered_data is not None:
+        selected_carrier = hovered_data['points'][0]['label']
+    
+    df_filtered = df.loc[(pd.Timestamp(start_date) <= df["Date"]) & (df["Date"] <= pd.Timestamp(end_date))]
+    df_filtered = df_filtered[df_filtered['UniqueCarrier'].isin([selected_carrier])]
+
+    if method == "mean":
+        delay_filtered_df = df_filtered[["Date", f"{delay_type_key}"]].groupby("Date").mean().reset_index()
+    elif method =="total":
+        delay_filtered_df = df_filtered[["Date", f"{delay_type_key}"]].groupby("Date").sum().reset_index()
+
+    fig = px.line(delay_filtered_df, x="Date", y=f"{delay_type_key}", 
+                title=f"Delay for selected airline: {airline_dict[selected_carrier]} ({selected_carrier})",
+                labels={"Date": "Date", f"{delay_type_key}": f"{method} Delay in minutes"})
+
     return fig
 
 @app.callback(
@@ -250,19 +275,24 @@ dashboard = dbc.Container(
             [
                 dbc.Col(
                     [
-                        dcc.Graph(id='graph-output'),
+                        dcc.Graph(id='flights-per-carrier'),
                         html.Br()  # Breathing room
                     ],
                     md=6
                 ),
                 dbc.Col(
                     [
-                        dcc.Graph(id='flights-per-carrier'),
+                        dcc.Graph(id='date-graph-hover'),
                     ],
                     md=6
                 ),
             ],
         ),
+        dbc.Row(
+            [
+                dbc.Col(dcc.Graph(id='graph-output'))
+            ]
+        )
     ],
 )
 
