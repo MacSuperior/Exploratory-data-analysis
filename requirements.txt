@@ -1,0 +1,5 @@
+pandas == 2.1.0
+plotly == 5.16.1
+dash == 2.13.0
+dash-bootstrap-components == 1.5.0
+folium == 0.14.0
