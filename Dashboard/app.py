@@ -2,7 +2,7 @@ import pandas as pd
 import plotly.express as px
 import dash
 import dash_bootstrap_components as dbc
-from dash import dcc, html, Input, Output
+from dash import dcc, html, Input, Output, State
 import folium
 
 # TODO just drop columns not in use before importing
@@ -11,7 +11,7 @@ airport_data = pd.read_pickle("airport_data.pkl")
 
 unique_airports = pd.unique(pd.concat([df['Origin'], df['Dest']]))
 
-app = dash.Dash(__name__, external_stylesheets=[dbc.themes.GRID])
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP], suppress_callback_exceptions=True)
 
 def calculate_metric(df, delay_type_key, method):
     if method == "mean":
@@ -42,7 +42,7 @@ airline_dict = {
     'F9': 'Frontier Airlines',
     'FL': 'AirTran Airways',
     'HA': 'Hawaiian Airlines',
-    'MQ': 'Envoy Air (formerly American Eagle Airlines)',
+    'MQ': 'Envoy Air (American Eagle)',
     'NW': 'Northwest Airlines',
     '9E': 'Endeavor Air',
     'AA': 'American Airlines',
@@ -57,7 +57,7 @@ airline_dict = {
     [Input('my-date-picker-range', 'start_date'), Input('my-date-picker-range', 'end_date')],
     Input('airline-selector', 'value')
 )
-def update_graph(start_date, end_date, selected_carriers):
+def update_graph_flights(start_date, end_date, selected_carriers):
     date_filtered_df = df.loc[(pd.Timestamp(start_date) <= df["Date"]) & (df["Date"] <= pd.Timestamp(end_date))]
 
     fully_filtered = date_filtered_df[date_filtered_df['UniqueCarrier'].isin(selected_carriers)]
@@ -77,13 +77,15 @@ def update_graph(start_date, end_date, selected_carriers):
     Output('graph-output', 'figure'),
     [Input('my-date-picker-range', 'start_date'), Input('my-date-picker-range', 'end_date')],
     Input('calculation-method', 'value'),
-    [Input('delay-type', 'value')]
+    Input('delay-type', 'value'),
+    Input('airline-selector', 'value')
 )
-def update_graph(start_date, end_date, method, delay_type_key):
+def update_graph(start_date, end_date, method, delay_type_key, selected_carriers):
     # TODO: make sorting of airports optional in UI
     # TODO: allow for different orientation of chart based on selection
     delay_type_value = delay_types[delay_type_key]
     df_filtered = df.loc[(pd.Timestamp(start_date) <= df["Date"]) & (df["Date"] <= pd.Timestamp(end_date))]
+    df_filtered = df_filtered[df_filtered['UniqueCarrier'].isin(selected_carriers)]
 
     result_df = calculate_metric(df_filtered, delay_type_key, method)
     result_df = result_df.sort_values(by=delay_type_key, ascending=False)
@@ -91,8 +93,7 @@ def update_graph(start_date, end_date, method, delay_type_key):
     fig = px.bar(result_df, x='UniqueCarrier', y=delay_type_key,
                 title=f'{method.capitalize()} {delay_type_value} by Airline',
                 color='UniqueCarrier',
-                text=delay_type_key,
-                height=600)
+                text=delay_type_key)
     
     fig.update_yaxes(title=f'{method.capitalize()} {delay_type_value} (minutes)')
     fig.update_traces(texttemplate='%{text:.2f}',
@@ -134,75 +135,158 @@ def update_map():
 
 app.layout = dbc.Container(
     [
-        dbc.Row(
+        dcc.Store(id="store"),
+        html.H1("Flight delay Dashboard"),
+        html.Hr(),
+        dbc.Tabs(
             [
-                dbc.Col(
-                    html.Iframe(
-                        id='airport-map',
-                        srcDoc=update_map(),
-                        width='100%',
-                        height=600),
-                width=12),
+                dbc.Tab(label="Airports Map", tab_id="map-tab"),
+                dbc.Tab(label="Dashboard", tab_id="dashboard-tab"),
             ],
+            id="tabs",
+            active_tab="map-tab",  # Default active tab
         ),
-        dbc.Row(
-            [
-                dbc.Col(
-                    dcc.RadioItems(
-                        options=[
-                            {'label': 'Use the average delay', 'value': 'mean'},
-                            {'label': 'Use the total delay', 'value': 'total'}],
-                        value='mean',
-                        id='calculation-method'),
-                ),
-            ],
-            justify="start",
+        html.Div(id="tab-content"),
+    ],
+    fluid=True,
+)
+
+dashboard = dbc.Container(
+    [
+        html.Br(),
+        dbc.Button(
+            "Toggle Filters",
+            id="toggle-filters-button",
+            color="primary",
+            className="mb-3",
+            n_clicks=0,
         ),
         dbc.Row(
             [
                 dbc.Col(
                     [
-                        dcc.RadioItems(
-                            options=[ {"label": label, "value": value} for value, label in delay_types.items()],
-                            value='ArrDelay',
-                            id='delay-type'),
-                        dcc.DatePickerRange(
-                            id='my-date-picker-range',
-                            min_date_allowed=df['Date'].min(),
-                            max_date_allowed=df['Date'].max(),
-                            initial_visible_month=df['Date'].min(),
-                            start_date=df['Date'].min(),
-                            end_date=df['Date'].max()),
-                    ],         
-                    width=3
+                        dbc.Collapse(
+                            dbc.Card(
+                                html.Div(
+                                    [
+                                        dbc.Label("Delay type"),
+                                        dcc.Dropdown(
+                                            options=[
+                                                {'label': 'Use the average delay', 'value': 'mean'},
+                                                {'label': 'Use the total delay', 'value': 'total'}
+                                            ],
+                                            value='mean',
+                                            id='calculation-method'
+                                        ),
+                                        dbc.Label("Delay kind"),
+                                        dcc.Dropdown(
+                                            options=[
+                                                {"label": label, "value": value}
+                                                for value, label in delay_types.items()
+                                            ],
+                                            value='ArrDelay',
+                                            id='delay-type'
+                                        ),
+                                        dcc.DatePickerRange(
+                                            id='my-date-picker-range',
+                                            min_date_allowed=df['Date'].min(),
+                                            max_date_allowed=df['Date'].max(),
+                                            initial_visible_month=df['Date'].min(),
+                                            start_date=df['Date'].min(),
+                                            end_date=df['Date'].max()
+                                        ),
+                                        html.Hr(),
+                                        html.P(
+                                            "This selection impacts all graphs",
+                                            className="text-muted"
+                                        )
+                                    ]
+                                ),
+                                body=True
+                            ),
+                            id="filter-collapse",
+                            is_open=False,
+                        ),
+                    ],
+                    md=4
                 ),
                 dbc.Col(
-                    dcc.Graph(id='graph-output'),
-                    width=9
+                    [
+                        dbc.Collapse(
+                            dbc.Card(
+                                html.Div(
+                                    [
+                                        dbc.Label("Airline selection"),
+                                        dcc.Dropdown(
+                                            options=[
+                                                {
+                                                    'label': f"{air_carrier} ({air_carrier_code})",
+                                                    'value': air_carrier_code
+                                                }
+                                                for air_carrier_code, air_carrier in airline_dict.items()
+                                            ],
+                                            value=[key for key in airline_dict.keys()],
+                                            id='airline-selector',
+                                            multi=True
+                                        ),
+                                        html.Hr(),
+                                        html.P(
+                                            "This selection impacts all graphs",
+                                            className="text-muted"
+                                        )
+                                    ]
+                                ),
+                                body=True
+                            ),
+                            id="airline-collapse",
+                            is_open=False,
+                        ),
+                    ],
+                    md=8
                 ),
             ],
-            align="center",
         ),
-
         dbc.Row(
             [
                 dbc.Col(
-                    dcc.Checklist(
-                        options=[{'label': air_carrier, 'value': air_carrier_code} for air_carrier_code, air_carrier in airline_dict.items()],
-                        value=[key for key in airline_dict.keys()],
-                        id='airline-selector'
-                        ),
+                    [
+                        dcc.Graph(id='graph-output'),
+                        html.Br()  # Breathing room
+                    ],
+                    md=6
                 ),
                 dbc.Col(
-                    dcc.Graph(id='flights-per-carrier')   ,
-                    width=9                 
+                    [
+                        dcc.Graph(id='flights-per-carrier'),
+                    ],
+                    md=6
                 ),
-                html.Br() # Breathing room
-            ]
+            ],
         ),
     ],
-    fluid=True,
 )
+
+@app.callback(Output("tab-content", "children"), [Input("tabs", "active_tab")])
+def render_tab_content(active_tab):
+    if active_tab == "map-tab":
+        return html.Iframe(
+            id='airport-map',
+            srcDoc=update_map(),
+            width='100%',
+            height=600
+        )
+    elif active_tab == "dashboard-tab":
+        return dashboard
+
+@app.callback(
+    [Output("filter-collapse", "is_open"), Output("airline-collapse", "is_open")],
+    [Input("toggle-filters-button", "n_clicks")],
+    [State("filter-collapse", "is_open"), State("airline-collapse", "is_open")],
+)
+def toggle_filters(n, filter_is_open, airline_is_open):
+    if n:
+        return not filter_is_open, not airline_is_open
+    return filter_is_open, airline_is_open
 
 if __name__ == '__main__':
     app.run_server(debug=True)
